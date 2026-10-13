@@ -429,6 +429,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape')closeDrawer();
 });
 document.addEventListener('keyup',e=>{if(e.key===' '||e.key==='Enter')cancelHold();});
+document.addEventListener('contextmenu',e=>{if(e.target.closest&&e.target.closest('.hold'))e.preventDefault();});
 
 /* ---------------- fighter card tilt ---------------- */
 let tiltEl=null;
