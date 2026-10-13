@@ -32,7 +32,7 @@
 <div id="dashboard" class="hidden">
   <header class="bug" aria-label="Live score">
     <div class="bug-side d"><span class="av" role="img" aria-label="Dante"></span><span class="nm display">DANTE</span><b class="display" data-score="DANTE">0</b></div>
-    <div class="bug-mid"><span class="emblem" aria-hidden="true"></span><span class="display" id="bugTitle">Prediction Championship</span></div>
+    <div class="bug-mid"><span class="emblem" aria-hidden="true"></span><span class="display" id="bugTitle">Prediction Championship</span><small class="display" id="bugCd"></small></div>
     <div class="bug-side t"><b class="display" data-score="TRIGGER">0</b><span class="nm display">TRIGGER</span><span class="av" role="img" aria-label="Trigger"></span></div>
   </header>
   <div class="idbar">
@@ -52,11 +52,13 @@
         <p class="tt">Tale of the tape</p>
         <h1 class="evt" id="evt">Prediction Championship</h1>
         <p class="meta" id="evMeta"></p>
+        <div class="countdown hidden" id="countdown" role="timer" aria-live="off"><span class="cd-label" id="cdLabel"></span><span class="cd-units" id="cdUnits"></span><span class="cd-hint hidden" id="cdHint"></span></div>
         <span class="evstatus hidden" id="evStatus"></span>
         <div class="row" style="--i:0"><span class="display" data-score="DANTE">0</span><em>Points this event</em><span class="display" data-score="TRIGGER">0</span></div>
-        <div class="row" style="--i:1"><span class="display" id="advD">0</span><em>Advantage points</em><span class="display" id="advT">0</span></div>
-        <div class="row hidden" id="rowLast" style="--i:2"><span class="display" id="lastD">0</span><em id="lastLabel"></em><span class="display" id="lastT">0</span></div>
-        <div class="row" style="--i:3"><span class="display" id="lk-DANTE">0</span><em>Picks locked right now</em><span class="display" id="lk-TRIGGER">0</span></div>
+        <div class="row" style="--i:1"><span class="display" id="evEdgeD">-</span><em id="edgeLabel">Advantage this event</em><span class="display" id="evEdgeT">-</span></div>
+        <div class="row" style="--i:2"><span class="display" id="advD">0</span><em>Advantage held</em><span class="display" id="advT">0</span></div>
+        <div class="row hidden" id="rowLast" style="--i:3"><span class="display" id="lastD">0</span><em id="lastLabel"></em><span class="display" id="lastT">0</span></div>
+        <div class="row" style="--i:4"><span class="display" id="lk-DANTE">0</span><em>Picks locked right now</em><span class="display" id="lk-TRIGGER">0</span></div>
       </div>
 
       <figure class="fcard t cut"><div class="fc-in cut"><div class="poster" role="img" aria-label="Illustrated portrait of Trigger holding the championship belt"></div>
@@ -66,10 +68,19 @@
   </section>
 
   <main class="wrap">
-    <div class="sechead"><h2 class="display">The card</h2><i></i><button id="finishBtn" class="finish hidden" type="button">Finish event</button></div>
+    <div class="sechead"><h2 class="display">The card</h2><i></i><button id="editEventBtn" class="finish hidden" type="button">Edit event</button><button id="finishBtn" class="finish hidden" type="button">Finish event</button></div>
+    <p id="rulesNote" class="rulesnote hidden"></p>
+    <p id="boostNote" class="rulesnote hidden"></p>
+    <form id="rulesBar" class="rulesbar hidden" onsubmit="return false">
+      <div id="rbChecks" class="rbchecks"></div>
+      <button class="primary" type="submit">Save</button>
+      <button class="finish hidden" id="rollBtn" type="button">Roll boosts</button>
+    </form>
+    <div id="spendBox" class="spendbox hidden"></div>
+    <div id="resultBox" class="resultbox hidden"></div>
     <div id="bouts"></div>
     <div id="history" class="history"></div>
-    <p class="footnote">Private league. Picks are checked and locked on the server. Event scores and advantage standings are separate.</p>
+    <p class="footnote">Private league. Picks are checked and locked on the server. Event points and advantage standings are separate.</p>
   </main>
 </div>
 
@@ -87,22 +98,29 @@
   <form id="createEventForm" onsubmit="return false">
     <label class="f">Event title<input class="in" id="eventTitle" required placeholder="SummerSlam 2027" autocomplete="off"></label>
     <label class="f">Date<input class="in" id="eventDate" type="date" required></label>
+    <label class="f">Start time (Eastern Time)<input class="in" id="eventTime" type="time"></label>
+    <p class="hint">Eastern Time. It shows as EST in winter and EDT in summer, and the countdown follows it.</p>
     <label class="f">City / Venue<input class="in" id="eventLocation" placeholder="New Orleans" autocomplete="off"></label>
-    <label class="f check"><input id="titleOnLine" type="checkbox"> Championship title on the line</label>
-    <button class="primary full" type="submit">Create event</button>
+    <div id="neChecks"></div>
+    <p class="hint hidden" id="eNote"></p>
+    <label class="f hidden" id="eConfirmWrap">Type the event name to confirm<input class="in" id="eConfirm" autocomplete="off"></label>
+    <button class="primary full" id="eSubmit" type="submit">Create event</button>
+    <button class="finish hidden" id="eDelete" type="button" style="width:100%;margin-top:10px">Delete event</button>
     <p id="createEventStatus" class="note" role="status" aria-live="polite"></p>
   </form>
 
   <form id="createMatchForm" class="hidden" onsubmit="return false">
-    <label class="f">Open event<select class="in" id="matchEvent" required></select></label>
+    <label class="f" id="matchEventWrap">Open event<select class="in" id="matchEvent" required></select></label>
     <label class="f">Match name<input class="in" id="matchTitle" required placeholder="Men's Ladder Match" autocomplete="off"></label>
     <label class="f" for="mInput">Eligible wrestlers. Press Enter after each name.</label>
     <div class="chipbox"><span id="mTags"></span><input id="mInput" placeholder="Type a name" autocomplete="off"></div>
     <p class="note warn hidden" id="mWarn">That reads like a matchup. Add each wrestler as their own chip.</p>
-    <label class="f" style="margin-top:14px">Pick multipliers, comma-separated<input class="in" id="matchSlots" value="1" autocomplete="off"></label>
-    <div class="preview" id="mPreview"></div>
-    <p class="hint">Example: 3,2 gives each player two separate picks worth 3 and 2 points. Each one locks on its own.</p>
+    <label class="f" id="matchTypeWrap" style="margin-top:14px">Match type<select class="in" id="matchType"><option value="STANDARD">Standard (1 pick, or 2 with 6 or more choices)</option><option value="RUMBLE">Royal Rumble (2 winner picks + 4 final-four predictions)</option></select></label>
+    <p class="hint" id="mPreview"></p>
+    <p class="hint">Picks per match are automatic. Tag matches: list the teams as the choices. Boosts are rolled by the system once the card is final.</p>
+    <p class="hint hidden" id="mLockNote"></p>
     <button class="primary full" id="mSubmit" type="submit" disabled>Add match</button>
+    <button class="finish hidden" id="mDelete" type="button" style="width:100%;margin-top:10px">Delete match</button>
     <p id="createMatchStatus" class="note" role="status" aria-live="polite"></p>
   </form>
 </aside>
