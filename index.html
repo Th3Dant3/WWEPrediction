@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#08070b">
+<title>Prediction Championship</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="rough"><feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" seed="4" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="5"/></filter></svg>
+
+<!-- ============ SIGN IN ============ -->
+<section id="auth" class="authwrap">
+  <div class="beam d" aria-hidden="true"></div><div class="beam t" aria-hidden="true"></div>
+  <div class="auth-card cut"><div class="auth-in cut">
+    <div class="auth-faces"><span class="av big d" role="img" aria-label="Dante"></span><span class="display">VS</span><span class="av big t" role="img" aria-label="Trigger"></span></div>
+    <h1 class="display">Prediction Championship</h1>
+    <p class="muted">Private event predictions. Every pick locks for good.</p>
+    <div class="tabs"><button id="loginTab" class="active" type="button">Sign in</button><button id="signupTab" type="button">Create account</button></div>
+    <form id="authForm" onsubmit="return false">
+      <label class="f">Username<input class="in" id="username" autocomplete="username" required minlength="3" maxlength="30"></label>
+      <label class="f">Password<input class="in" id="password" type="password" autocomplete="current-password" required></label>
+      <label class="f hidden" id="inviteWrap">Your private invitation code<input class="in" id="invite" type="text" autocomplete="off" placeholder="Ask your administrator"></label>
+      <button id="authBtn" type="submit" class="primary full">Sign in</button>
+    </form>
+    <p id="authMsg" class="note bad" role="status" aria-live="polite"></p>
+  </div></div>
+</section>
+
+<!-- ============ APP ============ -->
+<div id="dashboard" class="hidden">
+  <header class="bug" aria-label="Live score">
+    <div class="bug-side d"><span class="av" role="img" aria-label="Dante"></span><span class="nm display">DANTE</span><b class="display" data-score="DANTE">0</b></div>
+    <div class="bug-mid"><span class="emblem" aria-hidden="true"></span><span class="display" id="bugTitle">Prediction Championship</span></div>
+    <div class="bug-side t"><b class="display" data-score="TRIGGER">0</b><span class="nm display">TRIGGER</span><span class="av" role="img" aria-label="Trigger"></span></div>
+  </header>
+  <div class="idbar">
+    <span id="netNote" class="net hidden">Reconnecting...</span>
+    <span id="identity"></span>
+    <button id="adminBtn" class="adminbtn hidden" type="button">Admin tools</button>
+    <button id="logout" class="ghost" type="button">Log out</button>
+  </div>
+
+  <section class="arena" aria-label="Tale of the tape">
+    <div class="beam d" aria-hidden="true"></div><div class="beam t" aria-hidden="true"></div>
+    <div class="tapegrid">
+      <figure class="fcard d cut"><div class="fc-in cut"><div class="poster" role="img" aria-label="Illustrated portrait of Dante in a red coat"></div>
+        <figcaption class="fc-foot"><span><span class="display">Dante</span><span class="champ hidden" id="champ-DANTE">Champion</span></span><span class="advp"><span class="al">Advantage</span><span id="pips-DANTE" class="pips"></span></span></figcaption></div></figure>
+
+      <div class="tape">
+        <p class="tt">Tale of the tape</p>
+        <h1 class="evt" id="evt">Prediction Championship</h1>
+        <p class="meta" id="evMeta"></p>
+        <span class="evstatus hidden" id="evStatus"></span>
+        <div class="row" style="--i:0"><span class="display" data-score="DANTE">0</span><em>Points this event</em><span class="display" data-score="TRIGGER">0</span></div>
+        <div class="row" style="--i:1"><span class="display" id="advD">0</span><em>Advantage points</em><span class="display" id="advT">0</span></div>
+        <div class="row hidden" id="rowLast" style="--i:2"><span class="display" id="lastD">0</span><em id="lastLabel"></em><span class="display" id="lastT">0</span></div>
+        <div class="row" style="--i:3"><span class="display" id="lk-DANTE">0</span><em>Picks locked right now</em><span class="display" id="lk-TRIGGER">0</span></div>
+      </div>
+
+      <figure class="fcard t cut"><div class="fc-in cut"><div class="poster" role="img" aria-label="Illustrated portrait of Trigger holding the championship belt"></div>
+        <figcaption class="fc-foot"><span><span class="display">Trigger</span><span class="champ hidden" id="champ-TRIGGER">Champion</span></span><span class="advp"><span class="al">Advantage</span><span id="pips-TRIGGER" class="pips"></span></span></figcaption></div></figure>
+    </div>
+    <nav id="events" class="events hidden" aria-label="Events"></nav>
+  </section>
+
+  <main class="wrap">
+    <div class="sechead"><h2 class="display">The card</h2><i></i><button id="finishBtn" class="finish hidden" type="button">Finish event</button></div>
+    <div id="bouts"></div>
+    <div id="history" class="history"></div>
+    <p class="footnote">Private league. Picks are checked and locked on the server. Event scores and advantage standings are separate.</p>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="toastText"></span></div>
+<canvas id="fx" aria-hidden="true"></canvas>
+
+<!-- ============ ADMIN DRAWER ============ -->
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-label="Admin tools">
+  <button class="dclose" id="dclose" type="button" aria-label="Close admin tools">×</button>
+  <h2 class="display">Admin tools</h2>
+  <p class="hint">Only you can add events and matches and record winners.</p>
+  <div class="dtabs"><button id="tabEvent" class="active" type="button">New event</button><button id="tabMatch" type="button">Add match</button></div>
+
+  <form id="createEventForm" onsubmit="return false">
+    <label class="f">Event title<input class="in" id="eventTitle" required placeholder="SummerSlam 2027" autocomplete="off"></label>
+    <label class="f">Date<input class="in" id="eventDate" type="date" required></label>
+    <label class="f">City / Venue<input class="in" id="eventLocation" placeholder="New Orleans" autocomplete="off"></label>
+    <label class="f check"><input id="titleOnLine" type="checkbox"> Championship title on the line</label>
+    <button class="primary full" type="submit">Create event</button>
+    <p id="createEventStatus" class="note" role="status" aria-live="polite"></p>
+  </form>
+
+  <form id="createMatchForm" class="hidden" onsubmit="return false">
+    <label class="f">Open event<select class="in" id="matchEvent" required></select></label>
+    <label class="f">Match name<input class="in" id="matchTitle" required placeholder="Men's Ladder Match" autocomplete="off"></label>
+    <label class="f" for="mInput">Eligible wrestlers. Press Enter after each name.</label>
+    <div class="chipbox"><span id="mTags"></span><input id="mInput" placeholder="Type a name" autocomplete="off"></div>
+    <p class="note warn hidden" id="mWarn">That reads like a matchup. Add each wrestler as their own chip.</p>
+    <label class="f" style="margin-top:14px">Pick multipliers, comma-separated<input class="in" id="matchSlots" value="1" autocomplete="off"></label>
+    <div class="preview" id="mPreview"></div>
+    <p class="hint">Example: 3,2 gives each player two separate picks worth 3 and 2 points. Each one locks on its own.</p>
+    <button class="primary full" id="mSubmit" type="submit" disabled>Add match</button>
+    <p id="createMatchStatus" class="note" role="status" aria-live="polite"></p>
+  </form>
+</aside>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
