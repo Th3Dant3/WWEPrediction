@@ -102,6 +102,11 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 .cd-unit{background:#1b1520;padding:5px 14px 3px;min-width:66px;clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%)}
 .cd-unit b{display:block;font:italic 400 36px/1 var(--display);font-variant-numeric:tabular-nums;color:#fff}
 .cd-unit i{display:block;font:11px var(--tag);font-style:normal;color:var(--mute)}
+.etclock{margin-right:auto;font:13px var(--tag);color:#d8cfe0;font-variant-numeric:tabular-nums}
+.cd-when{font:13px var(--tag);color:#d8cfe0}
+.cd-set{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap}
+.cd-set .in{width:auto;margin:0;padding:6px 8px}
+.cd-set .primary{padding:7px 16px}
 .cd-hint{font:12px var(--tag);color:var(--mute)}
 #bugCd{font-size:13px;color:#cfd8ee;margin-left:6px;white-space:nowrap;font-style:normal}
 .evstatus{display:inline-block;margin:0 0 18px;font:800 12px var(--tag);padding:2px 14px;background:#2a2132;color:#e6dcef;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%)}
@@ -203,6 +208,8 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 
 /* rules + results */
 .rulesnote{margin:0 0 14px;padding:12px 16px;background:#14101a;border-left:6px solid var(--t);font:14px var(--tag);color:#d8cfe0}
+.rulesnote.alert{border-left-color:var(--d);background:#241418;color:#fff;font-weight:700}
+.closednote{margin:8px 0 0;padding:8px 10px;background:#241418;border-left:3px solid var(--d);font:700 13px var(--tag);color:#ffd2d7}
 .rulesbar{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin:0 0 16px;padding:14px 16px;background:#1a1420;border-left:6px solid var(--d)}
 .rulesbar .f{margin:0;flex:1 1 220px}
 .rulesbar .f.check{flex:0 0 auto;padding-bottom:12px}

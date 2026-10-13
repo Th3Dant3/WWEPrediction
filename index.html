@@ -36,6 +36,7 @@
     <div class="bug-side t"><b class="display" data-score="TRIGGER">0</b><span class="nm display">TRIGGER</span><span class="av" role="img" aria-label="Trigger"></span></div>
   </header>
   <div class="idbar">
+    <span id="etClock" class="etclock" title="Current date and time in Eastern Time"></span>
     <span id="netNote" class="net hidden">Reconnecting...</span>
     <span id="identity"></span>
     <button id="adminBtn" class="adminbtn hidden" type="button">Admin tools</button>
@@ -52,7 +53,8 @@
         <p class="tt">Tale of the tape</p>
         <h1 class="evt" id="evt">Prediction Championship</h1>
         <p class="meta" id="evMeta"></p>
-        <div class="countdown hidden" id="countdown" role="timer" aria-live="off"><span class="cd-label" id="cdLabel"></span><span class="cd-units" id="cdUnits"></span><span class="cd-hint hidden" id="cdHint"></span></div>
+        <div class="countdown hidden" id="countdown" role="timer" aria-live="off"><span class="cd-label" id="cdLabel"></span><span class="cd-units" id="cdUnits"></span><span class="cd-when" id="cdWhen"></span><span class="cd-hint hidden" id="cdHint"></span>
+          <span class="cd-set hidden" id="cdSet"><input class="in" type="time" id="cdTime" aria-label="Start time (Eastern Time)"><button class="primary" type="button" id="cdTimeSave">Set time</button></span></div>
         <span class="evstatus hidden" id="evStatus"></span>
         <div class="row" style="--i:0"><span class="display" data-score="DANTE">0</span><em>Points this event</em><span class="display" data-score="TRIGGER">0</span></div>
         <div class="row" style="--i:1"><span class="display" id="evEdgeD">-</span><em id="edgeLabel">Advantage this event</em><span class="display" id="evEdgeT">-</span></div>

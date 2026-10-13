@@ -158,7 +158,20 @@ function startOf(E){
   const y=d.getFullYear(),mo=d.getMonth()+1,dd=d.getDate(),hm=/^(\d{2}):(\d{2})$/.exec(E.startTime||'');
   return hm?{t:etInstant(y,mo,dd,+hm[1],+hm[2]),exact:true}:{t:etInstant(y,mo,dd,0,0),exact:false};
 }
+function saveQuickTime(){
+  const E=curEvent();if(!E||!isAdmin())return;
+  const t=$('cdTime').value;
+  if(!/^\d{2}:\d{2}$/.test(t)){toast('Pick a start time first (Eastern Time).','err');return;}
+  const d=parseDate(E.eventDate),date=d?d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()):E.eventDate;
+  E.startTime=t;renderHero(false);tickCountdown();toast('Start time saved.');
+  queue(()=>rpc('updateEvent',TOKEN,{eventId:E.id,title:E.title,eventDate:date,startTime:t,location:E.location||''})).then(settle,failed);
+}
 function whenText(E){const st=startOf(E);return fmtDate(E.eventDate)+(st&&st.exact?', '+fmtTimeET(st.t):'');}
+const nowFmt=new Intl.DateTimeFormat('en-US',{timeZone:ET,weekday:'short',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
+const dayFmt=new Intl.DateTimeFormat('en-US',{timeZone:ET,weekday:'short',month:'short',day:'numeric',year:'numeric'});
+/** The live "right now" clock, always in Eastern Time. */
+function tickClock(){$('etClock').textContent='Eastern Time: '+nowFmt.format(new Date());}
+const startLine=(st,verb)=>verb+' '+dayFmt.format(new Date(st.t))+(st.exact?', '+fmtTimeET(st.t):' (time not set)');
 const cdUnit=(v,l)=>'<span class="cd-unit"><b>'+(l==='days'||l==='day'?v:String(v).padStart(2,'0'))+'</b><i>'+l+'</i></span>';
 function tickCountdown(){
   const E=DATA?curEvent():null;
@@ -166,6 +179,10 @@ function tickCountdown(){
   show('countdown',!!st);
   if(!st){$('bugCd').textContent='';return;}
   const now=Date.now(),diff=st.t-now;
+  $('cdWhen').textContent=startLine(st,diff>0?'Starts':'Started');
+  const setter=!st.exact&&isAdmin();
+  show('cdSet',setter);show('cdHint',setter);
+  if(setter)$('cdHint').textContent='Set the start time (Eastern Time) for an exact countdown:';
   $('countdown').classList.toggle('live',diff<=0);
   if(diff>0){
     const s=Math.floor(diff/1000),p={d:Math.floor(s/86400),h:Math.floor(s%86400/3600),m:Math.floor(s%3600/60),s:s%60};
@@ -173,18 +190,16 @@ function tickCountdown(){
       $('cdLabel').textContent='Starts in';
       $('cdUnits').innerHTML=cdUnit(p.d,'days')+cdUnit(p.h,'hrs')+cdUnit(p.m,'min')+cdUnit(p.s,'sec');
       $('bugCd').textContent=p.d>0?p.d+'d '+pad2(p.h)+'h '+pad2(p.m)+'m':pad2(p.h)+':'+pad2(p.m)+':'+pad2(p.s);
-      show('cdHint',false);
     }else{
       const days=Math.ceil(diff/86400000);
       $('cdLabel').textContent='Starts in (date only)';
       $('cdUnits').innerHTML=cdUnit(days,days===1?'day':'days');
       $('bugCd').textContent=days+(days===1?' day':' days');
-      show('cdHint',isAdmin());$('cdHint').textContent='Add a start time for an exact countdown (Edit event).';
     }
   }else{
     const hrs=(now-st.t)/3600000;
     $('cdLabel').textContent=st.exact?(hrs<10?'Live now':'Started '+fmtDate(E.eventDate)):'Event day';
-    $('cdUnits').innerHTML='';show('cdHint',false);
+    $('cdUnits').innerHTML='';
     $('bugCd').textContent=st.exact&&hrs<10?'Live':'';
   }
 }
@@ -379,8 +394,9 @@ function renderRules(){
   if(showBoost){
     bn.textContent=E.boost?('Boosts are live: '+E.boost.count+' boosted pick'+(E.boost.count===1?'':'s')+' across '+E.boost.matches+' matches, shown with a gold x2 on the card. Picks are open.')
       :E.picksOpen?'This event was already in progress, so it keeps its original pick values.'
-      :isAdmin()?'Roll the boosts to open picks. The number of boosts depends on the number of matches.'
-      :'Waiting for the administrator to roll the boosts. Picks open after that.';
+      :isAdmin()?'Picks are closed. Press Roll boosts below to open them. The number of boosts depends on the number of matches.'
+      :'Picks are closed. Waiting for the administrator to roll the boosts. Picks open as soon as they do, and this page updates by itself.';
+    bn.classList.toggle('alert',!E.boost&&!E.picksOpen);
   }
   const showBar=!!(isAdmin()&&E&&E.status==='OPEN');
   show('rulesBar',showBar);
@@ -512,7 +528,7 @@ function tile(role,m,s,j,E){
   }
   let picker='';
   if(mine&&!locked&&E.status==='OPEN'&&!m.winner){
-    if(!E.picksOpen)picker='<p class="hint">Picks open after the boosts are rolled.</p>';
+    if(!E.picksOpen)picker='<p class="closednote">Picks are closed until the administrator rolls the boosts.</p>';
     else{
       const taken=new Set(m.slots.filter(x=>x.id!==s.id&&(x.group==='F'?'F':'W')===grp).map(x=>pickOf(role,m,x).choice));
       const sel=m.choices.length>8
@@ -938,7 +954,9 @@ async function pollLoop(){
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&TOKEN&&DATA&&!pending)refresh();});
 
 buildChecks('ne');buildChecks('rb');
-setInterval(()=>{if(!document.hidden)tickCountdown();},1000);
+$('cdTimeSave').addEventListener('click',saveQuickTime);
+tickClock();
+setInterval(()=>{if(!document.hidden){tickClock();tickCountdown();}},1000);
 if(TOKEN){const m=$('authMsg');m.className='note warn';m.textContent='Restoring your session...';refresh().then(ok=>{if(ok)$('authMsg').textContent='';});}
 setTimeout(pollLoop,6000);
 
