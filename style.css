@@ -236,6 +236,14 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 .spendlane{background:var(--lane);padding:12px;border-top:3px solid var(--side)}
 .spendlane.dante{--side:var(--d);--on:#fff;--face:var(--face-d)}
 .spendlane.trigger{--side:var(--t);--on:#1a1204;--face:var(--face-t)}
+.alloclist{list-style:none;margin:8px 0;padding:0;font:13px var(--tag);color:#d8cfe0}
+.alloclist li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--edge)}
+.alloclist li .xbtn{width:30px;height:30px;font-size:16px}
+.allocadd{display:grid;gap:6px;margin:8px 0}
+.allocadd .in{margin:0;padding:8px;font-size:14px}
+.foot.pending{display:grid;gap:8px;border-left:4px solid var(--hi);background:#1a1420}
+.pbtns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.resultbox .alloclist{margin-top:10px}
 .stepper{display:flex;align-items:center;justify-content:center;gap:16px;margin:10px 0 4px}
 .stepper button{width:44px;height:44px;background:#2c2335;border:0;font-size:24px;line-height:1;clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%)}
 .stepper button:hover:not(:disabled){background:var(--side);color:var(--on)}
@@ -249,6 +257,14 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 .cardwrap.boosted:not(.hit){filter:drop-shadow(0 0 10px #ffe3a1aa)}
 .slotname{position:absolute;right:8px;top:12px;z-index:3;font:700 11px var(--tag);color:#d8cfe0;background:#000a;padding:1px 8px;clip-path:polygon(5px 0,100% 0,calc(100% - 5px) 100%,0 100%)}
 .pickselect{margin-top:8px;padding:8px;font-size:14px}
+.namerow{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.namerow .in{margin:0;flex:1}
+.xbtn{background:#2c2335;border:0;color:var(--mute);width:38px;height:42px;font-size:20px;line-height:1;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%)}
+.xbtn:hover{background:var(--d);color:#fff}
+.pickinput{margin-top:8px;padding:8px;font-size:14px}
+.slotwrap .hint{margin-top:4px}
+.addname{display:flex;gap:8px;margin-top:8px;align-items:center}
+.addname .in{margin:0;flex:1;padding:7px 10px}
 .foot.rumble{display:grid;gap:10px}
 .foot .chip.on{background:var(--hi);color:#1a1204}
 .evtype{display:inline-block;margin-left:8px;font:800 12px var(--tag);padding:2px 12px;background:#2a2132;color:#e6dcef;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%)}

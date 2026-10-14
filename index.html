@@ -86,6 +86,7 @@
   </main>
 </div>
 
+<datalist id="knownNames"></datalist>
 <div class="toast" id="toast" role="status" aria-live="polite"><span id="toastText"></span></div>
 <canvas id="fx" aria-hidden="true"></canvas>
 
@@ -114,10 +115,14 @@
   <form id="createMatchForm" class="hidden" onsubmit="return false">
     <label class="f" id="matchEventWrap">Open event<select class="in" id="matchEvent" required></select></label>
     <label class="f">Match name<input class="in" id="matchTitle" required placeholder="Men's Ladder Match" autocomplete="off"></label>
-    <label class="f" for="mInput">Eligible wrestlers. Press Enter after each name.</label>
-    <div class="chipbox"><span id="mTags"></span><input id="mInput" placeholder="Type a name" autocomplete="off"></div>
-    <p class="note warn hidden" id="mWarn">That reads like a matchup. Add each wrestler as their own chip.</p>
-    <label class="f" id="matchTypeWrap" style="margin-top:14px">Match type<select class="in" id="matchType"><option value="STANDARD">Standard (1 pick, or 2 with 6 or more choices)</option><option value="RUMBLE">Royal Rumble (2 winner picks + 4 final-four predictions)</option></select></label>
+    <label class="f" id="matchTypeWrap">Match type<select class="in" id="matchType"></select></label>
+    <p class="hint" id="mTypeHint"></p>
+    <div id="namesBox">
+      <label class="f">How many wrestlers or teams?<input class="in" id="mCount" type="number" min="2" max="30" value="2" inputmode="numeric"></label>
+      <div id="mNames"></div>
+    </div>
+    <p class="note hidden" id="rumbleNote">Royal Rumble: you do not enter any names. Dante and Trigger type the wrestlers themselves as part of their predictions (2 winner picks and 4 final-four predictions). After the match you record the real final four and the winner.</p>
+    <p class="note warn hidden" id="mWarn"></p>
     <p class="hint" id="mPreview"></p>
     <p class="hint">Picks per match are automatic. Tag matches: list the teams as the choices. Boosts are rolled by the system once the card is final.</p>
     <p class="hint hidden" id="mLockNote"></p>

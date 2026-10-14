@@ -17,7 +17,7 @@ const NAME={DANTE:'Dante',TRIGGER:'Trigger',ADMIN:'Admin'};
 const OTHER={DANTE:'Trigger',TRIGGER:'Dante'};
 const LOCK='<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M7 10V7a5 5 0 0 1 10 0v3h1.5A1.5 1.5 0 0 1 20 11.5v8a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5v-8A1.5 1.5 0 0 1 5.5 10H7zm2 0h6V7a3 3 0 0 0-6 0v3z"/></svg>';
 const RULE_TEXT={
-  TITLE:'WWE PLE, Top (title match): correct picks earn points, and a boosted pick counts double. Before results start, each player locks how many advantage points to spend. Spent points are used up. The higher total (picks plus spent) takes the title, and the player who loses it earns +1 advantage.',
+  TITLE:'WWE PLE, Top (title match): correct picks earn points, and a boosted pick counts double. Before results start, each player places advantage on matches: Wild Card (+1) or X2 (+2) when their pick is right, or a cash-in, interference or something they write (+1 if it happens, even if their pick is wrong). Each placement costs 1 advantage and is used up. The higher total (picks plus bonuses) takes the title, and the player who loses it earns +1 advantage.',
   NON_TITLE:'WWE PLE, Mid: the winner earns +2 advantage, the loser +1, and a draw gives +1 each. These points stop at 4 held before a title event.',
   LOW:'WWE PLE, Low: the winner earns +1 advantage, the loser and a draw earn 0. These points count toward the limit of 4.',
   NON_WWE:'Non-WWE event: the winner earns +1 advantage, outside the 4-point limit.'};
@@ -80,7 +80,15 @@ function onCheck(p,t){
   }
   syncChecks(p);
 }
-const GENERAL_RULES='Calling the winner of every match earns +1 advantage, outside the limit. Each match gives 1 pick, or 2 when there are 6 or more choices. The Royal Rumble has 2 winner picks and 4 final-four predictions.';
+const GENERAL_RULES='Calling the winner of every match earns +1 advantage, outside the limit. Each match gives 1 pick, or 2 when there are 6 or more choices. The Royal Rumble has 2 winner picks and 4 final-four predictions, and Dante and Trigger type the wrestler names themselves.';
+/* What a placement of advantage can be. The server uses the same keys and values. */
+const MODE={
+  WILD:{label:'Wild Card',desc:'+1 if your pick in that match is right'},
+  X2:{label:'X2',desc:'+2 if your pick in that match is right'},
+  CASHIN:{label:'Cash-in happens',desc:'+1 if it happens, even if your pick is wrong'},
+  INTERFERENCE:{label:'Interference happens',desc:'+1 if it happens, even if your pick is wrong'},
+  CUSTOM:{label:'Something else (write it)',desc:'+1 if it happens, even if your pick is wrong'}};
+const propKey=a=>a.k==='CUSTOM'?'CUSTOM:'+normName(a.t):a.k;
 const fmtEdge=n=>(n>0?'+':'')+n;
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $=id=>document.getElementById(id);
@@ -215,14 +223,17 @@ function defaultEventId(){
   const all=DATA.events.slice().sort((a,b)=>dateVal(b)-dateVal(a));
   return all.length?all[0].id:'';
 }
+/** Rumble names are typed by the players, so compare them ignoring case, accents, punctuation and extra spaces. */
+const normName=s=>String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+const sameName=(m,a,b)=>m.matchType==='RUMBLE'?normName(a)===normName(b):a===b;
 function localScores(e){
   const t={DANTE:0,TRIGGER:0};
   matchesOf(e).forEach(m=>{
     if(!m.winner)return;
     PLAYERS.forEach(r=>m.slots.forEach(s=>{
       const p=pickOf(r,m,s);if(!p.lockedAt)return;
-      if(s.group==='F'){if((m.finalFour||[]).includes(p.choice))t[r]+=Number(s.points)||0;}
-      else if(p.choice===m.winner)t[r]+=Number(s.points)||0;
+      if(s.group==='F'){if((m.finalFour||[]).some(x=>sameName(m,x,p.choice)))t[r]+=Number(s.points)||0;}
+      else if(sameName(m,p.choice,m.winner))t[r]+=Number(s.points)||0;
     }));
   });
   return t;
@@ -230,6 +241,7 @@ function localScores(e){
 function isWaiting(){
   const E=curEvent();if(!E||E.status!=='OPEN'||!PLAYERS.includes(me()))return false;
   if(E.spend&&E.spend[me()]&&E.spend[me()].locked&&!PLAYERS.every(r=>E.spend[r].locked))return true;
+  if(matchesOf(E).some(m=>m.pending))return true; // a result is waiting for someone to confirm
   return matchesOf(E).some(m=>m.lockProgress[me()]===m.slots.length&&!m.fullyLocked);
 }
 
@@ -324,6 +336,14 @@ function detectChanges(prev,next){
   const spendRevealed=!bothSpend(pe)&&bothSpend(ne);
   if(spendRevealed)PLAYERS.forEach(r=>{if(r!==role)fresh.flip.add('spend:'+r);});
   const boostsOpened=!!(pe&&ne&&!pe.picksOpen&&ne.picksOpen);
+  let proposed=null,cleared=null;
+  matchesOf(E).forEach(m=>{
+    const pm=prev.matches.find(x=>x.id===m.id);if(!pm)return;
+    if(!pm.pending&&m.pending&&m.pending.by!==role)proposed=m;
+    if(pm.pending&&!m.pending&&!m.winner)cleared=m;
+  });
+  if(proposed&&!resultMatch){toast(NAME[proposed.pending.by]+' recorded a result for "'+proposed.title+'". Confirm it or dispute it.');return;}
+  if(cleared&&!resultMatch){toast('The proposed result for "'+cleared.title+'" was cleared. Record it again.');return;}
   if(resultMatch){toast('Result in: '+resultMatch.winner+' wins.');fireConfetti(scorers);}
   else if(spendRevealed)toast('Both spends locked. Revealed.');
   else if(revealed)toast('Both locked. Picks revealed.');
@@ -340,6 +360,7 @@ function renderAll(){
   show('auth',false);show('dashboard',true);
   $('identity').textContent='Signed in as '+DATA.user.username+', '+(me()==='ADMIN'?'Admin':'Player ('+NAME[me()]+')');
   show('adminBtn',isAdmin());
+  $('knownNames').innerHTML=(DATA.knownNames||[]).map(n=>'<option value="'+esc(n)+'"></option>').join('');
   renderHero(first);renderEvents();renderRules();renderResult();renderBouts();renderHistory();renderFinish();
   if(first){shown={DANTE:0,TRIGGER:0};setTimeout(updateScores,1200);}else updateScores();
 }
@@ -376,7 +397,7 @@ function edgeRow(E){
   }
   const pv=(DATA.preview||{})[E.id];
   if(E.eventType==='TITLE'){
-    lab.textContent='Title total (picks + spent)';
+    lab.textContent='Title total (picks + bonus)';
     d.textContent=pv?pv.DANTE:'-';t.textContent=pv?pv.TRIGGER:'-';return;
   }
   lab.textContent='Advantage if it ended now';
@@ -434,10 +455,16 @@ function renderResult(){
     const col=(role,cls)=>{const a=r.delta[role];return '<div class="rescol '+cls+'"><span class="display">'+NAME[role]+'</span><b>'+fmtEdge(r.net[role])+' advantage</b><ul>'+(a.parts.length?a.parts.map(p=>'<li>'+fmtEdge(p.n)+' '+esc(p.why)+'</li>').join(''):'<li>No advantage earned</li>')+'</ul></div>';};
     let t='';
     if(r.kind==='TITLE'){
-      t='Title totals: Dante '+r.totals.DANTE+' (picks '+r.points.DANTE+' + spent '+r.spent.DANTE+'), Trigger '+r.totals.TRIGGER+' (picks '+r.points.TRIGGER+' + spent '+r.spent.TRIGGER+'). '+
+      const bn=r.bonus||r.spent;
+      t='Title totals: Dante '+r.totals.DANTE+' (picks '+r.points.DANTE+' + bonus '+bn.DANTE+'), Trigger '+r.totals.TRIGGER+' (picks '+r.points.TRIGGER+' + bonus '+bn.TRIGGER+'). '+
         (r.transfer?nm(r.transfer.from)+' loses the title to '+nm(r.transfer.to)+' and earns +1 advantage.':nm(r.champion)+' keeps the title.');
     }
-    box.innerHTML='<h3 class="display">Final result</h3><div class="resgrid">'+col('DANTE','d')+col('TRIGGER','t')+'</div>'+(t?'<p class="restitle">'+esc(t)+'</p>':'');
+    let al='';
+    if(r.allocations){
+      const one=role=>{const list=r.allocations[role]||[];return list.length?'<li><b>'+NAME[role]+'</b>: '+list.map(a=>(MODE[a.k]?MODE[a.k].label:a.k)+(a.k==='CUSTOM'?' "'+esc(a.t)+'"':'')+' on '+esc(a.matchTitle||'a match')+(a.void?' (void)':' ('+fmtEdge(a.earned)+')')).join('; ')+'</li>':'';};
+      const rows=one('DANTE')+one('TRIGGER');if(rows)al='<ul class="alloclist">'+rows+'</ul>';
+    }
+    box.innerHTML='<h3 class="display">Final result</h3><div class="resgrid">'+col('DANTE','d')+col('TRIGGER','t')+'</div>'+(t?'<p class="restitle">'+esc(t)+'</p>':'')+al;
     return;
   }
   // finished under the earlier v2 rules
@@ -470,33 +497,46 @@ function renderFinish(){
   const armed=armKey==='finish:'+E.id;b.classList.toggle('armed',armed);
   b.textContent=armed?'Tap again to finish event':'Finish event';
 }
-let spendDraft=0,spendFor='',rumbleDraft={};
+/* allocDraft = the placements a player is building before locking; rumbleDraft also holds the result being entered */
+let allocDraft=[],allocSel={m:'',k:'X2',t:''},allocFor='',rumbleDraft={};
 function bankOf(role){const b=(DATA.bank&&DATA.bank[role])||{};const l=Number(b.limited)||0,x=Number(b.extra)||0;return{limited:l,extra:x,total:l+x};}
 function renderSpend(E){
   const box=$('spendBox');
   const on=!!(E&&E.status==='OPEN'&&E.eventType==='TITLE'&&E.spend&&matchesOf(E).length);
   show('spendBox',on);if(!on)return;
-  if(spendFor!==E.id){spendFor=E.id;spendDraft=0;}
-  const role=me(),mine=bankOf(role);
-  spendDraft=Math.max(0,Math.min(spendDraft,mine.total));
-  const both=PLAYERS.every(r=>E.spend[r].locked&&E.spend[r].amount!==null);
+  if(allocFor!==E.id){allocFor=E.id;allocDraft=[];allocSel={m:'',k:'X2',t:''};}
+  const role=me(),mine=bankOf(role),ms=matchesOf(E);
+  allocDraft=allocDraft.filter(a=>ms.some(m=>m.id===a.m));
+  if(!allocSel.m||!ms.some(m=>m.id===allocSel.m))allocSel.m=ms[0]?ms[0].id:'';
+  const both=PLAYERS.every(r=>E.spend[r].locked&&E.spend[r].allocs);
+  const titleOf=id=>{const m=ms.find(x=>x.id===id);return m?esc(m.title):'(deleted match)';};
+  const label=a=>titleOf(a.m)+': <b>'+esc(MODE[a.k]?MODE[a.k].label:a.k)+'</b>'+(a.k==='CUSTOM'?' "'+esc(a.t)+'"':'');
   const lane=r=>{
     const s=E.spend[r],bk=bankOf(r),own=r===role;let body;
     if(own&&!s.locked){
-      body='<div class="stepper"><button type="button" data-act="spendminus" aria-label="Spend one less"'+(spendDraft<=0?' disabled':'')+'>−</button><b class="display">'+spendDraft+'</b><button type="button" data-act="spendplus" aria-label="Spend one more"'+(spendDraft>=mine.total?' disabled':'')+'>+</button></div>'+
-        '<button class="hold" type="button" data-spend="1"><span>Hold to lock spend</span></button><p class="hint">Permanent once locked. Spent points are used up.</p>';
-    }else if(s.locked&&s.amount!==null&&(own||both)){
-      body='<div class="spendval display'+(fresh.flip.has('spend:'+r)?' flip':'')+'">'+s.amount+'</div><div class="who">'+LOCK+' '+(s.auto?'Nothing to spend':'Locked')+'</div>';
+      const used=allocDraft.length,rows=allocDraft.map((a,i)=>'<li><span>'+label(a)+'</span><button type="button" class="xbtn" data-act="adel" data-i="'+i+'" aria-label="Remove this placement">×</button></li>').join('');
+      body='<p class="who">Placed '+used+' of '+mine.total+'</p><ul class="alloclist">'+(rows||'<li class="muted">Nothing placed yet. Locking with nothing placed spends no advantage.</li>')+'</ul>'+
+        '<div class="allocadd"><select class="in" data-act="amatch" aria-label="Match">'+ms.map(m=>'<option value="'+esc(m.id)+'"'+(m.id===allocSel.m?' selected':'')+'>'+esc(m.title)+'</option>').join('')+'</select>'+
+        '<select class="in" data-act="amode" aria-label="What to place">'+Object.keys(MODE).map(k=>'<option value="'+k+'"'+(k===allocSel.k?' selected':'')+'>'+MODE[k].label+'</option>').join('')+'</select>'+
+        (allocSel.k==='CUSTOM'?'<input class="in" data-act="atext" maxlength="60" placeholder="What will happen?" value="'+esc(allocSel.t)+'" autocomplete="off" aria-label="What will happen">':'')+
+        '<button type="button" class="chip" data-act="aadd"'+(used>=mine.total?' disabled':'')+'>Add (costs 1)</button></div><p class="hint">'+esc(MODE[allocSel.k].label)+': '+MODE[allocSel.k].desc+'.</p>'+
+        '<button class="hold" type="button" data-spend="1"><span>Hold to lock spend</span></button><p class="hint">Permanent once locked. Placed advantage is used up, even if a placement does not pay.</p>';
+    }else if(s.locked&&s.allocs&&(own||both)){
+      const rows=s.allocs.map(a=>'<li><span>'+label(a)+'</span></li>').join('');
+      const plain=s.amount>0&&!s.allocs.length?'<li class="muted">'+s.amount+' advantage as plain bonus points (older style)</li>':'';
+      body='<div class="spendval display'+(fresh.flip.has('spend:'+r)?' flip':'')+'">'+s.amount+'</div><div class="who">'+LOCK+' '+(s.auto?'Nothing to spend':'Locked')+'</div><ul class="alloclist">'+(rows||plain||(s.auto?'':'<li class="muted">Nothing placed</li>'))+'</ul>';
     }else{
       body='<div class="spendval sealedval display">?</div><div class="who">'+(s.locked?LOCK+' Locked in, sealed':'Still deciding')+'</div>';
     }
     return '<div class="spendlane '+r.toLowerCase()+'"><div class="lanehead"><span class="av"></span><span class="display">'+NAME[r]+'</span><span class="prog">holds '+bk.total+'</span></div>'+body+'</div>';
   };
-  box.innerHTML='<h3 class="display">Spend advantage</h3><p>Lock how many advantage points to spend on this title event. Your total is your correct-pick points plus what you spend, and the higher total takes the title. '+
+  box.innerHTML='<h3 class="display">Place your advantage</h3><p>Put advantage on a match. Wild Card (+1) and X2 (+2) count when your pick in that match is right. A cash-in, interference or something you write counts +1 if the players confirm it happened, even if your pick was wrong. Each placement costs 1 and is used up. Your total is your correct picks plus these bonuses, and the higher total takes the title. '+
     (PLAYERS.includes(role)?'You hold '+mine.total+' ('+mine.limited+' inside the limit of 4, '+mine.extra+' outside it).':'')+'</p><div class="spendgrid">'+lane('DANTE')+lane('TRIGGER')+'</div>';
 }
 function renderBouts(){
   if(hold){pendingRender=true;return;}
+  const ae=document.activeElement;
+  if(ae&&ae.closest&&ae.closest('#bouts,#spendBox')&&/^(INPUT|SELECT)$/.test(ae.tagName)){pendingRender=true;return;} // keep what is being typed
   pendingRender=false;
   const E=curEvent(),box=$('bouts');
   renderSpend(E);
@@ -518,7 +558,7 @@ function tile(role,m,s,j,E){
     cls+=' sealed'+(all?' armed':n?' partial':'');
     face='<div class="stub display">'+stubTxt+'</div><div class="art">'+sname+'</div><div class="main"><div class="who">'+(all?LOCK+' Locked in':n?n+' of '+m.slots.length+' locked':'Still deciding')+'</div></div>';
   }else{
-    hit=!!(m.winner&&locked&&(grp==='F'?(m.finalFour||[]).includes(p.choice):p.choice===m.winner));
+    hit=!!(m.winner&&locked&&(grp==='F'?(m.finalFour||[]).some(x=>sameName(m,x,p.choice)):sameName(m,p.choice,m.winner)));
     const miss=!!(m.winner&&locked&&!hit);
     if(locked)cls+=' done';if(miss)cls+=' miss';
     if(fresh.flip.has(key))cls+=' flip';if(fresh.slam.has(key))cls+=' slam';
@@ -531,43 +571,94 @@ function tile(role,m,s,j,E){
     if(!E.picksOpen)picker='<p class="closednote">Picks are closed until the administrator rolls the boosts.</p>';
     else{
       const taken=new Set(m.slots.filter(x=>x.id!==s.id&&(x.group==='F'?'F':'W')===grp).map(x=>pickOf(role,m,x).choice));
-      const sel=m.choices.length>8
+      const rumbleM=m.matchType==='RUMBLE';
+      const sel=rumbleM
+        ?'<input class="in pickinput" list="knownNames" data-act="pickinput" data-m="'+esc(m.id)+'" data-s="'+esc(s.id)+'" data-cur="'+esc(p.choice||'')+'" value="'+esc(p.choice||'')+'" maxlength="60" placeholder="Type a wrestler name" autocomplete="off" aria-label="'+esc(s.name||'Wrestler')+'"><p class="hint">Type a name, then press Enter or tap away to save it.</p>'
+      :m.choices.length>8
         ?'<select class="in pickselect" data-act="pickselect" data-m="'+esc(m.id)+'" data-s="'+esc(s.id)+'" aria-label="Choose a wrestler"><option value="">Choose a wrestler...</option>'+m.choices.map(c=>'<option value="'+esc(c)+'"'+(p.choice===c?' selected':'')+(taken.has(c)?' disabled':'')+'>'+esc(c)+'</option>').join('')+'</select>'
         :'<div class="chips">'+m.choices.map(c=>'<button class="chip'+(p.choice===c?' on':'')+'" type="button" data-act="pick" data-m="'+esc(m.id)+'" data-s="'+esc(s.id)+'" data-c="'+esc(c)+'"'+(taken.has(c)?' disabled':'')+'>'+esc(c)+'</button>').join('')+'</div>';
-      picker=sel+'<button class="hold" type="button" data-m="'+esc(m.id)+'" data-s="'+esc(s.id)+'"'+(p.choice?'':' disabled')+'><span>'+(p.choice?'Hold to lock pick':'Choose a wrestler first')+'</span></button>'+(p.choice?'<p class="hint">Permanent once locked.</p>':'');
+      picker=sel+'<button class="hold" type="button" data-m="'+esc(m.id)+'" data-s="'+esc(s.id)+'"'+(p.choice?'':' disabled')+'><span>'+(p.choice?'Hold to lock pick':(rumbleM?'Type a name first':'Choose a wrestler first'))+'</span></button>'+(p.choice?'<p class="hint">Permanent once locked.</p>':'');
     }
   }
   return '<div class="slotwrap"><div class="cardwrap'+(hit?' hit':'')+(boosted?' boosted':'')+'"><div class="'+cls+'" '+d+'><div class="face cut">'+face+'</div></div></div>'+picker+'</div>';
 }
-function rumbleFoot(m){
-  const d=rumbleDraft[m.id]||(rumbleDraft[m.id]={final:(m.finalFour||[]).slice(),winner:m.winner||''});
-  const ff=m.choices.map(c=>'<button class="chip'+(d.final.includes(c)?' on':'')+'" type="button" data-act="rff" data-m="'+esc(m.id)+'" data-c="'+esc(c)+'">'+esc(c)+'</button>').join('');
-  const wn=d.final.length?d.final.map(c=>'<button class="chip win'+(d.winner===c?' on':'')+'" type="button" data-act="rwin" data-m="'+esc(m.id)+'" data-c="'+esc(c)+'">'+esc(c)+'</button>').join(''):'<span class="muted">Choose the final four first.</span>';
+/** The wrestlers the players typed (each once, ignoring case/spacing) plus any the admin added. */
+function rumblePool(m){
+  const seen=new Map(),add=n=>{const t=String(n||'').replace(/\s+/g,' ').trim(),k=normName(t);if(k&&!seen.has(k))seen.set(k,t);};
+  (m.picks||[]).forEach(p=>add(p.choice));
+  const d=rumbleDraft[m.id];if(d)d.final.forEach(add);
+  return Array.from(seen.values());
+}
+const draftOf=m=>rumbleDraft[m.id]||(rumbleDraft[m.id]={final:(m.finalFour||[]).slice(),winner:m.winner||'',props:(m.props||[]).slice()});
+/** Predictions someone placed on this match that can be confirmed afterwards (cash-in, interference, written). */
+function matchProps(m,E){
+  const out=new Map();
+  if(!E.spend)return [];
+  PLAYERS.forEach(r=>{((E.spend[r]&&E.spend[r].allocs)||[]).forEach(a=>{
+    if(a.m!==m.id||!(a.k==='CASHIN'||a.k==='INTERFERENCE'||a.k==='CUSTOM'))return;
+    const k=propKey(a),label=a.k==='CASHIN'?'Cash-in':a.k==='INTERFERENCE'?'Interference':a.t;
+    if(!out.has(k))out.set(k,{key:k,label,by:[r]});else out.get(k).by.push(r);
+  });});
+  return Array.from(out.values());
+}
+function formFoot(m,E,props){
+  const d=draftOf(m),admin=isAdmin();
+  let top;
+  if(m.matchType==='RUMBLE'){
+    const inFinal=c=>d.final.some(x=>normName(x)===normName(c));
+    const ff=rumblePool(m).map(c=>'<button class="chip'+(inFinal(c)?' on':'')+'" type="button" data-act="rff" data-m="'+esc(m.id)+'" data-c="'+esc(c)+'">'+esc(c)+'</button>').join('')||'<span class="muted">No names yet.</span>';
+    const wn=d.final.length?d.final.map(c=>'<button class="chip win'+(normName(d.winner)===normName(c)?' on':'')+'" type="button" data-act="rwin" data-m="'+esc(m.id)+'" data-c="'+esc(c)+'">'+esc(c)+'</button>').join(''):'<span class="muted">Choose the final four first.</span>';
+    top='<div><span>Real final four ('+d.final.length+' of 4). Tap the names the players typed, or add another.</span><div class="chips">'+ff+'</div>'+
+      '<div class="addname"><input class="in" id="rAdd_'+esc(m.id)+'" list="knownNames" maxlength="60" placeholder="Another wrestler (typed by neither player)" autocomplete="off"><button class="chip" type="button" data-act="radd" data-m="'+esc(m.id)+'">Add</button></div></div>'+
+      '<div><span>Winner</span><div class="chips">'+wn+'</div></div>';
+  }else{
+    top='<div><span>Who won?</span><div class="chips">'+m.choices.map(c=>'<button class="chip win'+(d.winner===c?' on':'')+'" type="button" data-act="rwin" data-m="'+esc(m.id)+'" data-c="'+esc(c)+'">'+esc(c)+'</button>').join('')+'</div></div>';
+  }
+  const pr=props.length?'<div><span>Which predictions happened? (a bonus for whoever made them, even with a wrong pick)</span><div class="chips">'+props.map(x=>'<button class="chip'+(d.props.includes(x.key)?' on':'')+'" type="button" data-act="rprop" data-m="'+esc(m.id)+'" data-k="'+esc(x.key)+'">'+esc(x.label)+' ('+x.by.map(r=>NAME[r]).join(', ')+')</button>').join('')+'</div></div>':'';
   const armed=armKey==='rec:'+m.id;
-  return '<div class="foot rumble"><div><span>Real final four ('+d.final.length+' of 4). '+(m.winner?'Result recorded. Change it and record again to correct it.':'')+'</span><div class="chips">'+ff+'</div></div>'+
-    '<div><span>Winner</span><div class="chips">'+wn+'</div></div>'+
-    '<div><button class="finish'+(armed?' armed':'')+'" type="button" data-act="rrec" data-m="'+esc(m.id)+'">'+(armed?'Tap again to record':'Record result')+'</button></div></div>';
+  const label=admin?(armed?'Tap again to record (final)':'Record result (final)'):(armed?'Tap again to send':'Send for confirmation');
+  const intro=admin?(m.winner?'Confirmed: '+esc(m.winner)+'. Record again to correct it.':'Record the result. As administrator it is final at once.'):'Record what happened. The other player has to confirm it before it counts.';
+  return '<div class="foot rumble"><div class="muted">'+intro+'</div>'+top+pr+'<div><button class="finish'+(armed?' armed':'')+'" type="button" data-act="rrec" data-m="'+esc(m.id)+'">'+label+'</button></div></div>';
+}
+function pendingFoot(m,E,props){
+  const p=m.pending,mine=p.by===me(),admin=isAdmin();
+  const happened=props.filter(x=>(p.props||[]).includes(x.key)).map(x=>esc(x.label));
+  const sum='<b>'+NAME[p.by]+'</b> says <b>'+esc(p.winner)+'</b> won.'+((p.finalFour&&p.finalFour.length)?' Final four: '+p.finalFour.map(esc).join(', ')+'.':'')+(props.length?' Happened: '+(happened.length?happened.join(', '):'none of the predictions')+'.':'');
+  const armed=armKey==='cfm:'+m.id;
+  let btns;
+  if(admin)btns='<button class="finish'+(armed?' armed':'')+'" type="button" data-act="cfm" data-m="'+esc(m.id)+'">'+(armed?'Tap again to confirm':'Confirm as administrator')+'</button><button class="finish" type="button" data-act="rej" data-m="'+esc(m.id)+'">Clear it</button>';
+  else if(mine)btns='<span class="muted">Waiting for '+OTHER[me()]+' to confirm.</span><button class="finish" type="button" data-act="rej" data-m="'+esc(m.id)+'">Withdraw</button>';
+  else btns='<button class="finish'+(armed?' armed':'')+'" type="button" data-act="cfm" data-m="'+esc(m.id)+'">'+(armed?'Tap again to confirm':'Confirm this result')+'</button><button class="finish" type="button" data-act="rej" data-m="'+esc(m.id)+'">Dispute</button>';
+  return '<div class="foot pending"><div>'+sum+'</div><div class="pbtns">'+btns+'</div></div>';
+}
+function resultFoot(m,E){
+  if(E.status!=='OPEN')return '';
+  const admin=isAdmin();if(!admin&&!PLAYERS.includes(me()))return '';
+  const spendOk=!(E.eventType==='TITLE'&&E.spend&&!PLAYERS.every(r=>E.spend[r].locked));
+  if(!m.fullyLocked)return '<div class="foot muted">Results unlock once both players lock every pick.</div>';
+  if(!spendOk)return '<div class="foot muted">Results unlock once both players have locked their advantage spend.</div>';
+  const props=matchProps(m,E);
+  if(m.pending)return pendingFoot(m,E,props);
+  if(m.winner&&!admin){
+    const happened=props.filter(x=>(m.props||[]).includes(x.key)).map(x=>esc(x.label));
+    return '<div class="foot"><span>Confirmed: <b>'+esc(m.winner)+'</b> won.'+(props.length?' Happened: '+(happened.length?happened.join(', '):'none of the predictions')+'.':'')+'</span></div>';
+  }
+  return formFoot(m,E,props);
 }
 function bout(m,E){
   const role=me(),n=m.slots.length,lp=m.lockProgress||{};
   const lanes=PLAYERS.map(r=>'<div class="lane '+r.toLowerCase()+'"><div class="lanehead"><span class="av"></span><span class="display">'+NAME[r]+'</span><span class="prog">'+(lp[r]||0)+' of '+n+' locked'+(r===role?', you':'')+'</span></div>'+m.slots.map((s,j)=>tile(r,m,s,j,E)).join('')+'</div>');
   let st,stc='state';
   if(m.winner){st='Winner: '+esc(m.winner);stc+=' done';}
+  else if(m.pending){st='Result proposed by '+NAME[m.pending.by];stc+=' both';}
   else if(m.fullyLocked){st='Both locked, awaiting result';stc+=' both';}
   else if(PLAYERS.every(r=>lp[r]===n)){st='Both locked. Revealing picks...';stc+=' both';}
   else if(role==='ADMIN')st=((lp.DANTE||0)+(lp.TRIGGER||0))+' of '+(n*2)+' picks locked';
   else if(lp[role]===n)st='Waiting on '+OTHER[role];
   else st=(lp[role]||0)+' of '+n+' of your picks locked';
-  let foot='';
-  if(isAdmin()&&E.status==='OPEN'){
-    const spendOk=!(E.eventType==='TITLE'&&E.spend&&!PLAYERS.every(r=>E.spend[r].locked));
-    if(!m.fullyLocked)foot='<div class="foot muted">Winners unlock once both players lock every pick.</div>';
-    else if(!spendOk)foot='<div class="foot muted">Results unlock once both players have locked their advantage spend.</div>';
-    else if(m.matchType==='RUMBLE')foot=rumbleFoot(m);
-    else foot='<div class="foot"><span>'+(m.winner?'Winner recorded. Tap another name to correct it.':'Record the winner')+'</span>'+m.choices.map(c=>{const armed=armKey==='win:'+m.id+':'+c;return '<button class="chip win'+(m.winner===c?' on':'')+(armed?' armed':'')+'" type="button" data-act="win" data-m="'+esc(m.id)+'" data-c="'+esc(c)+'">'+(armed?'Confirm '+esc(c)+'?':esc(c))+'</button>';}).join('')+'</div>';
-  }
+  const foot=resultFoot(m,E);
   const editBtn=isAdmin()&&E.status==='OPEN'?'<button class="editbtn" type="button" data-act="editmatch" data-m="'+esc(m.id)+'">Edit match</button>':'';
-  return '<article class="bout"><div class="bouthead"><h3 class="display">'+esc(m.title)+(m.matchType==='RUMBLE'?' <small class="muted">Royal Rumble</small>':'')+'</h3><span class="bright">'+editBtn+'<span class="'+stc+'">'+st+'</span></span></div><div class="lanes">'+lanes[0]+'<div class="vs display">VS</div>'+lanes[1]+'</div>'+foot+'</article>';
+  return '<article class="bout"><div class="bouthead"><h3 class="display">'+esc(m.title)+(m.matchKey&&m.matchKey!=='STANDARD'?' <small class="muted">'+esc(m.matchLabel||m.matchKey)+'</small>':'')+'</h3><span class="bright">'+editBtn+'<span class="'+stc+'">'+st+'</span></span></div><div class="lanes">'+lanes[0]+'<div class="vs display">VS</div>'+lanes[1]+'</div>'+foot+'</article>';
 }
 
 /* ---------------- scores + confetti ---------------- */
@@ -618,12 +709,27 @@ function doLock(mid,sid){
   }).then(settle,failed);
 }
 
+function addAlloc(){
+    const E=curEvent();if(!E)return;
+    const t=allocSel.k==='CUSTOM'?allocSel.t.replace(/\s+/g,' ').trim():'';
+    if(!allocSel.m){toast('Choose a match first.','err');return;}
+    if(allocSel.k==='CUSTOM'){
+      if(!t){toast('Write what you are predicting.','err');return;}
+      if(/[^\p{L}\p{N} .,'\u2019&!?:\-]/u.test(t)||/^[=+\-@]/.test(t)){toast('Use letters, numbers and simple punctuation only.','err');return;}
+    }
+    const cand={m:allocSel.m,k:allocSel.k,t},key=propKey(cand),here=allocDraft.filter(x=>x.m===cand.m);
+    if(here.some(x=>propKey(x)===key)){toast('You already added that to this match.','err');return;}
+    if((cand.k==='X2'||cand.k==='WILD')&&here.some(x=>x.k==='X2'||x.k==='WILD')){toast('A match can have Wild Card or X2, not both.','err');return;}
+    if(cand.k==='CUSTOM'&&here.filter(x=>x.k==='CUSTOM').length>=3){toast('At most 3 written predictions per match.','err');return;}
+    if(allocDraft.length>=bankOf(me()).total){toast('You have placed everything you hold.','err');return;}
+    allocDraft.push(cand);allocSel.t='';renderBouts();
+  }
 function doLockSpend(){
   const E=curEvent();if(!E||!E.spend)return;
-  const amount=Math.max(0,Math.min(spendDraft,bankOf(me()).total));
-  E.spend[me()]={locked:true,amount};
+  const allocations=allocDraft.map(a=>({matchId:a.m,mode:a.k,text:a.t||''}));
+  E.spend[me()]={locked:true,amount:allocations.length,allocs:allocDraft.map(a=>Object.assign({},a))};
   toast('Spend locked.');renderBouts();
-  queue(()=>rpc('lockSpend',TOKEN,{eventId:E.id,amount})).then(settle,failed);
+  queue(()=>rpc('lockSpend',TOKEN,{eventId:E.id,allocations})).then(settle,failed);
 }
 
 /* ---------------- admin actions ---------------- */
@@ -633,32 +739,53 @@ function arm(key,fn){
   armTimer=setTimeout(()=>{armKey='';renderBouts();renderFinish();applyEditMode();applyEventEditMode();},4000);
   renderBouts();renderFinish();applyEditMode();applyEventEditMode();
 }
-function doWinner(mid,choice){
-  const E=curEvent(),m=DATA.matches.find(x=>x.id===mid);if(!E||!m||m.winner===choice)return;
-  const scorers=new Set();m.winner=choice;
-  m.slots.forEach(s=>PLAYERS.forEach(r=>{const p=pickOf(r,m,s);if(p.lockedAt&&p.choice===choice){fresh.hit.add(r+':'+m.id+':'+s.id);scorers.add(r);}}));
-  DATA.scores[E.id]=localScores(E);
-  renderBouts();renderFinish();updateScores();toast('Winner recorded. Scores updated.');fireConfetti(scorers);
-  queue(()=>rpc('setMatchWinner',TOKEN,{matchId:mid,winner:choice})).then(settle,failed);
-}
 function doFinish(){
   const E=curEvent();if(!E)return;
   toast('Finishing event...');
   queue(()=>rpc('completeEvent',TOKEN,E.id)).then(()=>refresh(),failed);
 }
 
-function doRumbleResult(mid){
-  const d=rumbleDraft[mid];if(!d)return;
-  toast('Recording result...');
-  queue(()=>rpc('setMatchWinner',TOKEN,{matchId:mid,winner:d.winner,finalFour:d.final})).then(()=>{delete rumbleDraft[mid];return refresh(true);},failed);
+/** Record a result. A player SENDS it for the other player to confirm; the administrator records it as final. */
+function doResult(mid){
+  const d=rumbleDraft[mid],m=DATA.matches.find(x=>x.id===mid);if(!d||!m)return;
+  const payload={matchId:mid,winner:d.winner,props:d.props.slice()};
+  if(m.matchType==='RUMBLE')payload.finalFour=d.final.slice();
+  const admin=isAdmin();
+  toast(admin?'Recording result...':'Sending for confirmation...');
+  queue(()=>rpc(admin?'setMatchWinner':'proposeResult',TOKEN,payload)).then(()=>{delete rumbleDraft[mid];return refresh(true);},failed);
+}
+function doConfirm(mid){
+  toast('Confirming...');
+  queue(()=>rpc('confirmResult',TOKEN,{matchId:mid})).then(()=>refresh(true),failed);
+}
+function doReject(mid){
+  toast('Clearing the proposed result...');
+  queue(()=>rpc('rejectResult',TOKEN,{matchId:mid})).then(()=>refresh(true),failed);
 }
 
 /* ---------------- admin drawer ---------------- */
 let chips=[],editId='';   // chips: [{orig,name}] orig = the saved name (null for a new wrestler)
-let matchConfirm=false,deleteConfirm=false,editEventId='';
+const blankChips=n=>Array.from({length:n},()=>({orig:null,name:''}));
+let matchConfirm=false,deleteConfirm=false,editEventId='',typeBuiltFor='';
+/* ---- match types: a grouped list from the server (a short fallback if the server is older) ---- */
+const FALLBACK_TYPES=[
+  {key:'STANDARD',label:'Normal / One Fall',group:'Standard and singles',hint:'Two competitors. Won by pinfall, submission, knockout, countout or disqualification.'},
+  {key:'RUMBLE',label:'Royal Rumble',group:'Tag team and multi-competitor',hint:'Each player makes 2 winner picks and 4 final-four predictions.'}];
+const matchTypeList=()=>(DATA&&DATA.matchTypes&&DATA.matchTypes.length)?DATA.matchTypes:FALLBACK_TYPES;
+/** family: 'RUMBLE' shows only the Rumble, 'STANDARD' shows everything except it, falsy shows all. */
+function buildMatchTypeSelect(keep,family){
+  const list=matchTypeList().filter(t=>!family||(family==='RUMBLE'?t.key==='RUMBLE':t.key!=='RUMBLE'));
+  const groups=[];
+  list.forEach(t=>{let g=groups.find(x=>x.name===t.group);if(!g){g={name:t.group,items:[]};groups.push(g);}g.items.push(t);});
+  $('matchType').innerHTML=groups.map(g=>'<optgroup label="'+esc(g.name)+'">'+g.items.map(t=>'<option value="'+esc(t.key)+'">'+esc(t.label)+'</option>').join('')+'</optgroup>').join('');
+  $('matchType').value=keep||'STANDARD';
+  updateTypeHint();
+}
+function updateTypeHint(){const t=matchTypeList().find(x=>x.key===$('matchType').value);$('mTypeHint').textContent=t?t.hint:'';}
 function resetMatchForm(){
-  editId='';chips=[];matchConfirm=false;deleteConfirm=false;
-  $('matchTitle').value='';$('matchType').value='STANDARD';$('mInput').value='';
+  editId='';chips=blankChips(2);matchConfirm=false;deleteConfirm=false;
+  typeBuiltFor='';
+  $('matchTitle').value='';$('matchType').value='STANDARD';
   const st=$('createMatchStatus');st.className='note';st.textContent='';
 }
 function openDrawer(tab){
@@ -694,10 +821,11 @@ function openEdit(mid){
 function applyEditMode(){
   const {m,locked,won}=editState(),edit=!!m;
   $('matchEventWrap').classList.toggle('hidden',edit);
-  $('matchTypeWrap').classList.toggle('hidden',edit);
+  const want=edit?'e:'+editId:'add';
+  if(typeBuiltFor!==want){typeBuiltFor=want;buildMatchTypeSelect(edit?(m.matchKey||'STANDARD'):'STANDARD',edit?m.matchType:'');}
+  $('matchType').disabled=!!(edit&&m.matchType==='RUMBLE');   // a Rumble keeps its own pick structure
   $('tabMatch').textContent=edit?'Edit match':'Add match';
   $('mSubmit').textContent=matchConfirm?'Confirm and apply':(edit?'Save changes':'Add match');
-  $('mInput').disabled=won;
   const d=$('mDelete');d.classList.toggle('hidden',!edit);d.disabled=false;
   const armed=edit&&armKey==='del:'+editId;d.classList.toggle('armed',armed);
   d.textContent=armed?(deleteConfirm?'Tap again to delete anyway':'Tap again to delete this match'):'Delete match';
@@ -705,32 +833,40 @@ function applyEditMode(){
   if(edit)note.textContent=won?'A result is recorded, so only the match name can change. To restructure it, delete the match (you will be asked to confirm) and add it again.'
     :locked?'Picks are locked. You can rename or add wrestlers freely. Removing a wrestler, or going to fewer picks, clears the locked picks it affects after you confirm, and those players pick again. Deleting the match also asks first.'
     :'Edit anything. Renaming a wrestler updates every pick on them. Removing one clears draft picks on them. Going to 6 or more wrestlers adds a second pick (without a boost).';
+  if(edit&&m.matchType==='RUMBLE')note.textContent='A Royal Rumble has no name list: Dante and Trigger type the wrestlers themselves. You can change the match name here.';
 }
-function addChips(text){
-  String(text).split(/[\n,]/).map(x=>x.trim().slice(0,90)).filter(Boolean).forEach(c=>{if(!chips.some(x=>x.name===c)&&chips.length<30)chips.push({orig:null,name:c});});
-  renderChips();
-}
-function renderTags(){
+function renderNames(){
   const won=editState().won;
-  $('mTags').innerHTML=chips.map((c,i)=>'<span class="tag"><input class="tagin" data-i="'+i+'" value="'+esc(c.name)+'" size="'+Math.max(4,c.name.length)+'" maxlength="90" aria-label="Wrestler name" autocomplete="off"'+(won?' disabled':'')+'>'+(won?'':'<button type="button" data-act="rmchip" data-i="'+i+'" aria-label="Remove '+esc(c.name)+'">×</button>')+'</span>').join('');
+  $('mNames').innerHTML=chips.map((c,i)=>'<div class="namerow"><input class="in nameinp" data-i="'+i+'" value="'+esc(c.name)+'" maxlength="90" placeholder="Name '+(i+1)+'" aria-label="Name '+(i+1)+'" autocomplete="off"'+(won?' disabled':'')+'>'+(won||chips.length<=2?'':'<button type="button" class="xbtn" data-act="rmchip" data-i="'+i+'" aria-label="Remove name '+(i+1)+'">×</button>')+'</div>').join('');
+  const ae=document.activeElement;if(!ae||ae.id!=='mCount')$('mCount').value=chips.length;
+}
+function setCount(n){
+  if(!Number.isFinite(n))return;
+  n=Math.max(2,Math.min(30,Math.floor(n)));
+  while(chips.length<n)chips.push({orig:null,name:''});
+  if(chips.length>n)chips.length=n;
+  renderChips();
 }
 function refreshMatchForm(){
   if(matchConfirm){matchConfirm=false;$('mSubmit').textContent=editId?'Save changes':'Add match';}
-  const names=chips.map(c=>c.name.trim()),em=editState().m;
-  const dup=new Set(names).size!==names.length,empty=names.some(n=>!n),bad=names.some(n=>/[,\n]/.test(n));
-  const type=em?em.matchType:$('matchType').value,rumbleShort=type==='RUMBLE'&&names.length<6;
+  const em=editState().m,type=em?em.matchType:$('matchType').value,rumble=type==='RUMBLE';
+  show('namesBox',!rumble);show('rumbleNote',rumble);
+  const names=chips.map(c=>c.name.trim());
+  const dup=new Set(names.map(n=>n.toLowerCase())).size!==names.length,empty=names.some(n=>!n),bad=names.some(n=>/[,\n]/.test(n));
+  const vs=names.some(n=>/\bvs\.?\b/i.test(n));
   let warn='';
-  if(/\bvs\.?\b/i.test($('mInput').value+' '+names.join(' ')))warn='That reads like a matchup. Add each wrestler as their own chip.';
-  else if(dup)warn='Two wrestlers have the same name.';
-  else if(empty)warn='A wrestler name is empty.';
-  else if(bad)warn='Wrestler names cannot contain commas.';
-  else if(rumbleShort)warn='A Royal Rumble needs at least 6 wrestlers.';
+  if(!rumble){
+    if(vs)warn='That reads like a matchup. Put one wrestler or team in each box.';
+    else if(dup)warn='Two boxes have the same name.';
+    else if(empty)warn='Fill in every name box, or lower the number.';
+    else if(bad)warn='Names cannot contain commas.';
+  }
   $('mWarn').textContent=warn;show('mWarn',!!warn);
-  const picks=type==='RUMBLE'?'2 winner picks and 4 final-four predictions':(names.length>=6?'2 picks':'1 pick');
+  const picks=rumble?'2 winner picks and 4 final-four predictions':(names.length>=6?'2 picks':'1 pick');
   $('mPreview').textContent='Each player gets '+picks+' in this match.';
-  $('mSubmit').disabled=!($('matchTitle').value.trim()&&names.length>=2&&!dup&&!empty&&!bad&&!rumbleShort&&(editId||$('matchEvent').value));
+  $('mSubmit').disabled=!($('matchTitle').value.trim()&&(rumble||(names.length>=2&&!dup&&!empty&&!bad&&!vs))&&(editId||$('matchEvent').value));
 }
-function renderChips(){applyEditMode();renderTags();refreshMatchForm();}
+function renderChips(){applyEditMode();renderNames();refreshMatchForm();}
 /* ---- edit / delete an existing event ---- */
 function eventRisk(E){
   const ms=E?matchesOf(E):[];
@@ -822,16 +958,16 @@ async function submitMatch(ev){
     const names=chips.map(c=>c.name.trim());
     if(editing){
       const renames={};chips.forEach(c=>{const n=c.name.trim();if(c.orig&&c.orig!==n)renames[c.orig]=n;});
-      const data={matchId:editId,title:$('matchTitle').value.trim(),choices:names,renames,confirm:matchConfirm};
+      const data={matchId:editId,title:$('matchTitle').value.trim(),choices:names,renames,matchType:$('matchType').value,confirm:matchConfirm};
       const r=await queue(()=>rpc('updateMatch',TOKEN,data));
       resetMatchForm();closeDrawer();await refresh(true);
       toast('Match updated.'+(r&&r.voidedLocked?' '+r.voidedLocked+' locked pick'+(r.voidedLocked===1?'':'s')+' cleared.':'')+(r&&r.clearedDrafts?' '+r.clearedDrafts+' draft pick(s) cleared.':''));
       return;
     }
-    const data={eventId:$('matchEvent').value,title:$('matchTitle').value.trim(),choices:names.join(', '),matchType:$('matchType').value,confirm:matchConfirm};
+    const data={eventId:$('matchEvent').value,title:$('matchTitle').value.trim(),choices:$('matchType').value==='RUMBLE'?'':names.join(', '),matchType:$('matchType').value,confirm:matchConfirm};
     await queue(()=>rpc('saveMatch',TOKEN,data));
     status.className='note ok';status.textContent='Match added. Roll the boosts once the card is final.';
-    $('matchTitle').value='';chips=[];matchConfirm=false;selId=data.eventId||selId;renderChips();await refresh(true);
+    $('matchTitle').value='';chips=blankChips(2);matchConfirm=false;selId=data.eventId||selId;renderChips();await refresh(true);
     toast('Match added.');
   }catch(e){
     const msg=e.message||String(e);
@@ -891,7 +1027,6 @@ document.addEventListener('click',e=>{
   const b=e.target.closest&&e.target.closest('[data-act]');if(!b)return;
   const a=b.dataset.act;
   if(a==='pick')doPick(b.dataset.m,b.dataset.s,b.dataset.c);
-  else if(a==='win')arm('win:'+b.dataset.m+':'+b.dataset.c,()=>doWinner(b.dataset.m,b.dataset.c));
   else if(a==='event'){
     if(b.dataset.id===selId)return;
     selId=b.dataset.id;shown=scoreOf(curEvent());fresh={flip:new Set(),slam:new Set(),hit:new Set()};
@@ -899,11 +1034,29 @@ document.addEventListener('click',e=>{
   }
   else if(a==='rmchip'){chips.splice(Number(b.dataset.i),1);renderChips();}
   else if(a==='editmatch')openEdit(b.dataset.m);
-  else if(a==='spendplus'){spendDraft++;renderBouts();}
-  else if(a==='spendminus'){spendDraft--;renderBouts();}
-  else if(a==='rff'){const d=rumbleDraft[b.dataset.m];if(d){const c=b.dataset.c,i=d.final.indexOf(c);if(i>=0){d.final.splice(i,1);if(d.winner===c)d.winner='';}else if(d.final.length<4)d.final.push(c);renderBouts();}}
+  else if(a==='aadd')addAlloc();
+  else if(a==='adel'){allocDraft.splice(Number(b.dataset.i),1);renderBouts();}
+  else if(a==='rprop'){const d=rumbleDraft[b.dataset.m];if(d){const i=d.props.indexOf(b.dataset.k);if(i>=0)d.props.splice(i,1);else d.props.push(b.dataset.k);renderBouts();}}
+  else if(a==='cfm')arm('cfm:'+b.dataset.m,()=>doConfirm(b.dataset.m));
+  else if(a==='rej')doReject(b.dataset.m);
+  else if(a==='rff'){const d=rumbleDraft[b.dataset.m];if(d){const c=b.dataset.c,k=normName(c),i=d.final.findIndex(x=>normName(x)===k);if(i>=0){const gone=d.final.splice(i,1)[0];if(normName(d.winner)===normName(gone))d.winner='';}else if(d.final.length<4)d.final.push(c);renderBouts();}}
+  else if(a==='radd'){
+    const d=rumbleDraft[b.dataset.m],inp=$('rAdd_'+b.dataset.m);
+    if(d&&inp){
+      const v=inp.value.replace(/\s+/g,' ').trim();if(!v)return;
+      if(/[^\p{L}\p{N} .,'\u2019&\-]/u.test(v)||/^[=+\-@]/.test(v)){toast('Names can use letters, numbers and simple punctuation only.','err');return;}
+      if(d.final.some(x=>normName(x)===normName(v))){toast('That wrestler is already in the final four.','err');return;}
+      if(d.final.length>=4){toast('The final four is full. Remove one first.','err');return;}
+      d.final.push(v);inp.value='';renderBouts();
+    }
+  }
   else if(a==='rwin'){const d=rumbleDraft[b.dataset.m];if(d){d.winner=b.dataset.c;renderBouts();}}
-  else if(a==='rrec'){const d=rumbleDraft[b.dataset.m];if(!d||d.final.length!==4||!d.winner){toast('Pick the 4 finalists and the winner first.','err');return;}arm('rec:'+b.dataset.m,()=>doRumbleResult(b.dataset.m));}
+  else if(a==='rrec'){
+    const d=rumbleDraft[b.dataset.m],m=DATA.matches.find(x=>x.id===b.dataset.m);
+    if(!d||!m||!d.winner){toast(m&&m.matchType==='RUMBLE'?'Pick the 4 finalists and the winner first.':'Choose who won first.','err');return;}
+    if(m.matchType==='RUMBLE'&&d.final.length!==4){toast('Pick the 4 finalists and the winner first.','err');return;}
+    arm('rec:'+b.dataset.m,()=>doResult(b.dataset.m));
+  }
 });
 $('loginTab').addEventListener('click',()=>switchAuth('login'));
 $('signupTab').addEventListener('click',()=>switchAuth('signup'));
@@ -920,24 +1073,32 @@ $('tabMatch').addEventListener('click',()=>{resetMatchForm();resetEventForm();dr
 $('mDelete').addEventListener('click',()=>{if(editId)arm('del:'+editId,doDeleteMatch);});
 $('rulesBar').addEventListener('submit',saveRules);
 $('rollBtn').addEventListener('click',doRoll);
-document.addEventListener('change',e=>{const s=e.target;if(!s||!s.dataset)return;if(s.dataset.act==='pickselect'&&s.value)doPick(s.dataset.m,s.dataset.s,s.value);else if(s.dataset.check)onCheck(s.dataset.check,s);});
+document.addEventListener('change',e=>{
+  const s=e.target;if(!s||!s.dataset)return;
+  if(s.dataset.act==='pickselect'&&s.value)doPick(s.dataset.m,s.dataset.s,s.value);
+  else if(s.dataset.act==='pickinput'){
+    const v=s.value.replace(/\s+/g,' ').trim();
+    if(v&&(/[^\p{L}\p{N} .,'\u2019&\-]/u.test(v)||/^[=+\-@]/.test(v))){toast('Names can use letters, numbers and simple punctuation only.','err');s.value=s.dataset.cur||'';}
+    else if(v&&v!==(s.dataset.cur||''))doPick(s.dataset.m,s.dataset.s,v);
+    if(s.blur)s.blur();
+  }
+  else if(s.dataset.act==='amatch')allocSel.m=s.value;
+  else if(s.dataset.act==='amode'){allocSel.k=s.value;if(s.blur)s.blur();renderBouts();}
+  else if(s.dataset.check)onCheck(s.dataset.check,s);
+});
+document.addEventListener('focusout',e=>{if(pendingRender&&e.target&&e.target.closest&&e.target.closest('#bouts,#spendBox'))setTimeout(()=>renderBouts(),0);});
+document.addEventListener('input',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.act==='atext')allocSel.t=t.value;});
 $('finishBtn').addEventListener('click',()=>{const E=curEvent();if(E)arm('finish:'+E.id,doFinish);});
 $('createEventForm').addEventListener('submit',createEvent);
 $('createMatchForm').addEventListener('submit',submitMatch);
-$('mTags').addEventListener('input',e=>{
-  const t=e.target;if(!t.classList||!t.classList.contains('tagin'))return;
-  chips[Number(t.dataset.i)].name=t.value;t.size=Math.max(4,t.value.length);refreshMatchForm();
+$('mNames').addEventListener('input',e=>{
+  const t=e.target;if(!t.classList||!t.classList.contains('nameinp'))return;
+  chips[Number(t.dataset.i)].name=t.value;refreshMatchForm();
 });
-const mInput=$('mInput');
-mInput.addEventListener('keydown',e=>{
-  if(e.key==='Enter'||e.key===','){e.preventDefault();addChips(mInput.value);mInput.value='';}
-  else if(e.key==='Backspace'&&!mInput.value&&chips.length){chips.pop();renderChips();}
-});
-mInput.addEventListener('input',refreshMatchForm);
-mInput.addEventListener('paste',e=>{e.preventDefault();addChips((e.clipboardData||window.clipboardData).getData('text'));});
-mInput.addEventListener('blur',()=>{if(mInput.value.trim()){addChips(mInput.value);mInput.value='';}});
+$('mCount').addEventListener('input',()=>setCount(Number($('mCount').value)));
+$('mCount').addEventListener('change',()=>{$('mCount').value=chips.length;});
 $('matchTitle').addEventListener('input',refreshMatchForm);
-$('matchType').addEventListener('change',refreshMatchForm);
+$('matchType').addEventListener('change',()=>{updateTypeHint();refreshMatchForm();});
 $('matchEvent').addEventListener('change',refreshMatchForm);
 
 /* Polling: faster while you are waiting on the other player, slower when nothing can change. */
